@@ -7,17 +7,17 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 RUN apt-get update
 RUN apt-get upgrade -y
-RUN apt-get install git-core sudo build-essential cmake valgrind libcppunit-dev -y
+RUN apt-get install git-core sudo build-essential cmake valgrind libcppunit-dev libunwind8 -y
 
-# Build Google Test
-RUN git clone https://github.com/google/googletest.git /usr/local/src/googletest
-COPY ./Makefile.gtest ${GTEST_DIR}/make/Makefile.local
-RUN cd ${GTEST_DIR}/make && make -f Makefile.local && make -f Makefile.local install
-RUN ln -s ${GTEST_DIR}/make/sample1_unittest 
+WORKDIR /bin
+RUN curl https://github.com/DynamoRIO/drmemory/releases/download/release_2.5.0/DrMemory-Linux-2.5.0.tar.gz
+RUN tar xzf DrMemory-Linux-2.5.0.tar.gz
+
+
 
 # TODO: add Quick test, Boost test, Catch test
 
-WORKDIR /valgrind
+WORKDIR /debugger
 
-# docker build -t karek/valgrind:latest .
-# docker run -tiv $PWD/path/to/my/files:/valgrind karek/valgrind:latest
+# docker build -t heph3astus/cpp-memory-debugger:latest .
+# docker run -tiv $PWD/path/to/my/files:/debugger heph3astus/cpp-memory-debugger:latest
