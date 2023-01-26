@@ -15,5 +15,3 @@ RUN export PATH=$PATH:'/drmem/DrMemory-Linux-2.5.0/bin'
 
 WORKDIR /debugger
 
-# docker build -t eleanormally/cpp-memory-debugger:latest .
-# docker run -tiv $PWD/path/to/my/files:/debugger https://github.com/heph3astus/cpp-memory-debugger:latest
