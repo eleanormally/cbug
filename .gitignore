@@ -2,4 +2,5 @@
 .vscode/
 examples/leak.o
 examples/leak
-
+script/release
+*.zip
