@@ -212,7 +212,7 @@ func main() {
 	//starting handling docker
 
 	dockerCli, err := client.NewEnvClient()
-	ifErr(err, "Unable to connect to docker. Have you installed docker on your machine?", false)
+	ifErr(err, "Unable to connect to docker. Have you installed docker on your machine and is it running?", false)
 
 	if args[0] == "upgrade" {
 		if doImagePull(dockerCli, "eleanormally/cpp-memory-debugger:latest") {
