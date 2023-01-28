@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -29,6 +30,30 @@ func ifErr(err error, errMsg string, printErr bool) {
 		}
 		os.Exit(1)
 	}
+}
+
+func doImagePull(dockerCli *client.Client, image string) bool {
+	closer, err := dockerCli.ImagePull(context.Background(), "eleanormally/cpp-memory-debugger:latest", types.ImagePullOptions{
+		All:          false,
+		RegistryAuth: "",
+		Platform:     "",
+	})
+	var in = make([]byte, 8)
+	fullStatus := ""
+	for {
+		_, err := closer.Read(in)
+		if err == io.EOF {
+			break
+		}
+		fullStatus = fullStatus + string(in)
+	}
+	if strings.Contains(fullStatus, "up to date") {
+		return false
+	}
+
+	ifErr(err, "Error pulling docker image: ", true)
+	closer.Close()
+	return true
 }
 
 func main() {
@@ -58,15 +83,24 @@ func main() {
 
 	flags := flagStruct{}
 
-	args := os.Args[1:]
+	args := []string{}
 
 	//flag handling
-	var flagSlice = make([]string, 0, 5)
-	for index, arg := range args {
-		if arg[0] != '-' {
-			flagSlice = args[:index]
-			args = args[index:]
+	oneTimeContainerName := false
+	var flagSlice = []string{}
+	for index, arg := range os.Args[1:] {
+		if oneTimeContainerName {
+			oneTimeContainerName = false
+			conf.ContainerName = arg
+			continue
+		}
+		if arg == "-n" || arg == "--name" {
+			oneTimeContainerName = true
+		} else if arg[0] != '-' {
+			args = os.Args[index+1:]
 			break
+		} else {
+			args = append(args, arg)
 		}
 	}
 
@@ -120,7 +154,10 @@ func main() {
 			"\tclean: removes all files from the cbug container.\n" +
 			"\tsync: runs clean and then copies the current directory to cbug.\n" +
 			"\tconfig: configure the default behaviour of cbug.\n" +
+			"\tremove [name]: remove container with [name]. If no name is given, it will remove the default container. Will not remove non cbug containers.\n" +
+			"\tattach: attach current terminal to the cbug container. Useful for executing many commands back to back\n" +
 			"\tdefault: if none of these commands are present, the command will be passed\n" +
+			"\tupgrade: check for updates to cbug\n" +
 			"\t         directly to the cbug container.\n" +
 			"FLAGS:\n" +
 			"\t*flags only work when passing commands to the cbug container, not on " +
@@ -129,7 +166,8 @@ func main() {
 			"\t-s, --shutdown: shut down the container when cbug exits\n" +
 			"\t-p, --pause: pause those container when cbug exits\n" +
 			"\t-S, --sync: sync files before running command given\n" +
-			"\t-t, --tty: run commands through a tty shell. good for formatting, but will break streaming files into stdin (e.g. using < input.txt)")
+			"\t-t, --tty: run commands through a tty shell. good for formatting, but will break streaming files into stdin (e.g. using < input.txt)\n" +
+			"\t-n, --name: change the name of the container for this command. Does not effect the default conifg")
 		return
 	case "config":
 		if len(args) > 1 && args[1] == "default" {
@@ -164,12 +202,26 @@ func main() {
 		os.WriteFile(filepath.Dir(execLoc)+"/config.json", newConfigJson, 0644)
 
 		return
+	case "remove":
+		//NOTE: this cannot implement the whole command because needs docker
+		if len(args) > 1 {
+			conf.ContainerName = args[1]
+		}
 	}
 
 	//starting handling docker
 
 	dockerCli, err := client.NewEnvClient()
 	ifErr(err, "Unable to connect to docker. Have you installed docker on your machine?", false)
+
+	if args[0] == "upgrade" {
+		if doImagePull(dockerCli, "eleanormally/cpp-memory-debugger:latest") {
+			fmt.Println("Upgraded docker image. THIS HAS NOT UPGRADED ANY CBUG CONTAINERS. Please remove all existing cbug containers and recreate them to use the new version.")
+		} else {
+			fmt.Println("Already on latest cbug version.")
+		}
+		return
+	}
 
 	containers, err := dockerCli.ContainerList(context.Background(), types.ContainerListOptions{
 		All: true,
@@ -181,6 +233,20 @@ func main() {
 		for _, name := range dContainer.Names {
 			if name == "/"+conf.ContainerName {
 				if strings.Contains(dContainer.Image, "eleanormally/cpp-memory-debugger") {
+					//remove needs to be up here so that don't accidentally create new container if name not found
+					if args[0] == "remove" {
+						delay := time.Duration(1) * time.Millisecond
+						dockerCli.ContainerStop(context.Background(), dContainer.ID, &delay)
+						fmt.Print("Removing container... ")
+						err := dockerCli.ContainerRemove(context.Background(), dContainer.ID, types.ContainerRemoveOptions{
+							RemoveVolumes: true,
+							RemoveLinks:   false,
+							Force:         false,
+						})
+						ifErr(err, "Error removing container: ", true)
+						fmt.Println("Done")
+						return
+					}
 					containerID = dContainer.ID
 				} else {
 					fmt.Println("Error: found a docker container with the name \"" + conf.ContainerName + "\" in use not by cbug.\nPlease rename/delete the container named \"" + conf.ContainerName + "\", or use \"cbug config\" to change the name of cbug's container")
@@ -190,9 +256,31 @@ func main() {
 			}
 		}
 	}
+	if args[0] == "remove" {
+		fmt.Println("Could not find container \"" + conf.ContainerName + "\"")
+		return
+	}
 	if containerID == "" {
 
-		//TODO: add new upgrade command to repull latest docker image, and also pull here if not found any
+		images, err := dockerCli.ImageList(context.Background(), types.ImageListOptions{
+			All: true,
+		})
+		ifErr(err, "Error listing docker images", false)
+		foundImage := false
+	mainLoop:
+		for _, image := range images {
+			for _, label := range image.RepoDigests {
+				if strings.Contains(label, "eleanormally/cpp-memory-debugger") {
+					foundImage = true
+					break mainLoop
+				}
+			}
+		}
+		if !foundImage {
+			fmt.Print("Pulling cbug docker image...")
+			doImagePull(dockerCli, "eleanormally/cpp-memory-debugger")
+			fmt.Println("Done")
+		}
 
 		fmt.Print("Creating New Docker Container...")
 		cont, err := dockerCli.ContainerCreate(
@@ -274,8 +362,8 @@ func main() {
 		ifErr(err, "Error accessing current directory", false)
 		err = exec.Command("docker", "cp", workdir+"/.", conf.ContainerName+":debugger").Run()
 		ifErr(err, "Error copying files to docker container: ", true)
-	default:
 
+	default:
 		if flags.sync {
 			fmt.Print("Syncing files between current directory and cbug... ")
 			err = exec.Command("docker", strings.Split("exec "+conf.ContainerName+" rm -rf -- *", " ")...).Run()
@@ -291,10 +379,21 @@ func main() {
 		if flags.tty {
 			tty = "-t "
 		}
-		comArgs := strings.Split("exec -i "+tty+conf.ContainerName, " ")
-		if args[0][0] == '/' {
-			args = append([]string{"bash"}, args...)
+
+		var comArgs = []string{}
+		if args[0] == "attach" {
+			if tty != "" {
+				fmt.Println("tty is not possible when attaching a container. ignoring...")
+			}
+			comArgs = []string{"attach", conf.ContainerName}
+			args = []string{}
+		} else {
+			comArgs = strings.Split("exec -i "+tty+conf.ContainerName, " ")
+			if args[0][0] == '/' {
+				args = append([]string{"bash"}, args...)
+			}
 		}
+
 		command := exec.Command("docker", append(comArgs, args...)...)
 		command.Stdin = os.Stdin
 		command.Stdout = os.Stdout
@@ -309,7 +408,6 @@ func main() {
 		signalChan := make(chan os.Signal, 1)
 		signal.Notify(signalChan)
 	Loop:
-		//BUG: inconsistent signal sending with <input.txt type stuff
 		for {
 			select {
 			case sig := <-signalChan:
