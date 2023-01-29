@@ -190,10 +190,17 @@ func main() {
 
 	args := []string{}
 
+	osArgs := []string{}
+	if len(os.Args) == 1 {
+		osArgs = []string{"help"}
+	} else {
+		osArgs = os.Args[1:]
+	}
+
 	//flag handling
 	oneTimeContainerName := false
 	var flagSlice = []string{}
-	for index, arg := range os.Args[1:] {
+	for index, arg := range osArgs {
 		if oneTimeContainerName {
 			oneTimeContainerName = false
 			conf.ContainerName = arg
@@ -202,10 +209,10 @@ func main() {
 		if arg == "-n" || arg == "--name" {
 			oneTimeContainerName = true
 		} else if arg[0] != '-' {
-			args = os.Args[index+1:]
+			args = osArgs[index:]
 			break
 		} else {
-			args = append(args, arg)
+			flagSlice = append(flagSlice, arg)
 		}
 	}
 
