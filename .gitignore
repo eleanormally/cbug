@@ -4,3 +4,6 @@ examples/leak.o
 examples/leak
 script/release
 *.zip
+brew
+script/cbug
+.DS_Store
