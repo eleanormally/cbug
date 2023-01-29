@@ -1,12 +1,14 @@
 package main
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -19,7 +21,27 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+
+	"github.com/google/go-github/v50/github"
 )
+
+type flagStruct struct {
+	keepalive bool
+	pause     bool
+	stop      bool
+	sync      bool
+	tty       bool
+}
+
+type configStruct struct {
+	ContainerName    string `json:"containerName"`
+	DefaultBehaviour string `json:"exitBehaviourDefault"`
+}
+
+type infoStruct struct {
+	Version  string `json:"version"`
+	Platform string `json:"target"`
+}
 
 func ifErr(err error, errMsg string, printErr bool) {
 	if err != nil /*&& err.Error() != "exit status 1" */ {
@@ -56,30 +78,113 @@ func doImagePull(dockerCli *client.Client, image string) bool {
 	return true
 }
 
+func unzip(source string, destination string) error {
+	reader, err := zip.OpenReader(source)
+	ifErr(err, "Error unzipping new version", false)
+	defer reader.Close()
+	destination, err = filepath.Abs(destination)
+	ifErr(err, "Error unzipping new version", false)
+	for _, f := range reader.File {
+		err := unzipFile(f, destination)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func unzipFile(f *zip.File, destination string) error {
+	filePath := filepath.Join(destination, f.Name)
+	if !strings.HasPrefix(filePath, filepath.Clean(destination)+string(os.PathSeparator)) {
+		return fmt.Errorf("invalid file path %s", filePath)
+	}
+	if f.FileInfo().IsDir() {
+		if err := os.MkdirAll(filePath, os.ModePerm); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	destinationFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+	if err != nil {
+		return err
+	}
+	defer destinationFile.Close()
+
+	zippedFile, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer zippedFile.Close()
+
+	if _, err := io.Copy(destinationFile, zippedFile); err != nil {
+		return err
+	}
+	return nil
+}
+
+func getNewRelease(releaseInfo infoStruct) bool {
+	gitCli := github.NewClient(nil)
+	releases, _, err := gitCli.Repositories.ListReleases(context.Background(), "eleanormally", "cbug", &github.ListOptions{
+		Page:    0,
+		PerPage: 1,
+	})
+	ifErr(err, "Error finding cbug repository. Are you connected to the internet?", false)
+	if releases[0].GetTagName() != releaseInfo.Version {
+		fmt.Print("Found new version of cbug, would you like to install it? [Y/n]: ")
+		var res string
+		fmt.Scan(&res)
+		if strings.ToLower(res)[0] != 'y' {
+			return true
+		}
+		assets, _, err := gitCli.Repositories.ListReleaseAssets(context.Background(), "eleanormally", "cbug", releases[0].GetID(), &github.ListOptions{
+			Page:    0,
+			PerPage: 5,
+		})
+		ifErr(err, "Error getting assets from latest version of cbug", false)
+		for _, asset := range assets {
+			if len(asset.GetName()) > 4 && asset.GetName()[len(asset.GetName())-4:] == ".zip" && strings.Contains(asset.GetName(), releaseInfo.Platform) {
+				fmt.Print("Downloading...")
+				file, err := os.Create(os.TempDir() + "/" + asset.GetName())
+				resp, err := http.Get(asset.GetBrowserDownloadURL())
+				ifErr(err, "Error downloading latest release", false)
+				defer resp.Body.Close()
+				_, err = io.Copy(file, resp.Body)
+				ifErr(err, "Error copying file: ", true)
+				defer file.Close()
+				execLoc, err := os.Executable()
+				parentfolder := filepath.Dir(filepath.Dir(execLoc))
+				err = os.Rename(parentfolder, parentfolder+"old")
+				ifErr(err, "Error renaming old version of cbug", false)
+				if err = unzip(os.TempDir()+"/"+asset.GetName(), filepath.Dir(parentfolder)); err != nil {
+					fmt.Println("Error installing new version of cbug, reverting to old version...")
+					os.Rename(parentfolder+"old", parentfolder)
+					return false
+				}
+				os.RemoveAll(parentfolder + "old/")
+				os.Remove(parentfolder + "old")
+				fmt.Printf("Done")
+				return true
+			}
+		}
+		fmt.Println("Did not find a valid download file in latest release for this computer. No update to the cbug script was performed.")
+	}
+	return true
+}
+
 func main() {
 
-	type configStruct struct {
-		ContainerName    string `json:"containerName"`
-		DefaultBehaviour string `json:"exitBehaviourDefault"`
-	}
 	execLoc, err := os.Executable()
 	ifErr(err, "Error getting location of cbug: ", true)
-	if _, err = os.Stat(filepath.Dir(execLoc) + "/config.json"); errors.Is(err, os.ErrNotExist) {
-		os.WriteFile(filepath.Dir(execLoc)+"/config.json", []byte(`{"containerName": "cbug","exitBehaviourDefault": "shutdown"}`), 0644)
+	if _, err = os.Stat(filepath.Dir(execLoc) + "/../config.json"); errors.Is(err, os.ErrNotExist) {
+		os.WriteFile(filepath.Dir(execLoc)+"/../config.json", []byte(`{"containerName": "cbug","exitBehaviourDefault": "shutdown"}`), 0644)
 		fmt.Println("test")
 	}
-	confFile, err := ioutil.ReadFile(filepath.Dir(execLoc) + "/config.json")
+	confFile, err := ioutil.ReadFile(filepath.Dir(execLoc) + "/../config.json")
 	conf := configStruct{}
 	_ = json.Unmarshal([]byte(confFile), &conf)
 
 	//arg parsing
-	type flagStruct struct {
-		keepalive bool
-		pause     bool
-		stop      bool
-		sync      bool
-		tty       bool
-	}
 
 	flags := flagStruct{}
 
@@ -147,6 +252,14 @@ func main() {
 		}
 	}
 
+	if _, err = os.Stat(filepath.Dir(execLoc) + "/../release-info.json"); errors.Is(err, os.ErrNotExist) {
+		fmt.Println("CRITICAL ERROR: no release-info file. Please re-add this file or redownload cbug.")
+		os.Exit(1)
+	}
+	infoFile, err := ioutil.ReadFile(filepath.Dir(execLoc) + "/../release-info.json")
+	releaseInfo := infoStruct{}
+	_ = json.Unmarshal([]byte(infoFile), &releaseInfo)
+
 	//should run help command (and maybe others so its in switch) before touching docker
 	switch args[0] {
 	case "help":
@@ -158,6 +271,7 @@ func main() {
 			"\tattach: attach current terminal to the cbug container. Useful for executing many commands back to back\n" +
 			"\tdefault: if none of these commands are present, the command will be passed\n" +
 			"\tupgrade: check for updates to cbug\n" +
+			"\tinfo: view information on cbug\n" +
 			"\t         directly to the cbug container.\n" +
 			"FLAGS:\n" +
 			"\t*flags only work when passing commands to the cbug container, not on " +
@@ -199,7 +313,7 @@ func main() {
 		}
 		newConfigJson, err := json.Marshal(conf)
 		ifErr(err, "Error sending new config to config file", false)
-		os.WriteFile(filepath.Dir(execLoc)+"/config.json", newConfigJson, 0644)
+		os.WriteFile(filepath.Dir(execLoc)+"/../config.json", newConfigJson, 0644)
 
 		return
 	case "remove":
@@ -207,6 +321,9 @@ func main() {
 		if len(args) > 1 {
 			conf.ContainerName = args[1]
 		}
+	case "info":
+		fmt.Println("cbug version: " + releaseInfo.Version)
+		return
 	}
 
 	//starting handling docker
@@ -215,10 +332,18 @@ func main() {
 	ifErr(err, "Unable to connect to docker. Have you installed docker on your machine and is it running?", false)
 
 	if args[0] == "upgrade" {
+		fmt.Println("checking for new docker container...")
 		if doImagePull(dockerCli, "eleanormally/cpp-memory-debugger:latest") {
 			fmt.Println("Upgraded docker image. THIS HAS NOT UPGRADED ANY CBUG CONTAINERS. Please remove all existing cbug containers and recreate them to use the new version.")
 		} else {
-			fmt.Println("Already on latest cbug version.")
+			fmt.Println("Already on latest container")
+		}
+		if releaseInfo.Version == "dev" {
+			fmt.Println("You are currently on a development version of cbug, so no updates are allowed.")
+			return
+		}
+		if !getNewRelease(releaseInfo) {
+			os.Exit(1)
 		}
 		return
 	}

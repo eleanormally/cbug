@@ -5,7 +5,7 @@ This tool is especially designed for those developing on arm systems (e.g. apple
 ## Installing CBUG
 Before installing cbug, make sure that you have installed [docker](https://docker.com). Cbug is built on docker, and will not run without it.
 
-To install cbug, download the latest [release](https://github.com/eleanormally/cbug/releases), and unzip the file. To use cbug, either invoke its path directly (i.e. `~/user/cbug-verion/cbug`), or add the parent directory to your path.
+To install cbug, download the latest [release](https://github.com/eleanormally/cbug/releases), and unzip the file. To use cbug, either invoke its path directly (i.e. `~/user/cbug-verion/bin/cbug`), or add the bin directory to your path.
 
 ## Using cbug
 Using cbug is very simple. Simply add the `cbug` keyword before any command you want to use in the container. Before compiling or running code, however, make sure to run `cbug sync` to sync your current directory's files with cbug.
@@ -31,6 +31,9 @@ Removes a cbug container from docker
 
 #### `cbug upgrade`
 Cbug will look for updates to itself and the docker container it uses, and download any if available.
+
+#### `cbug info`
+Display cbug's version and any other important information
 
 
 ### command flags

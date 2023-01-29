@@ -1,6 +1,7 @@
 *.old
 .vscode/
-examples/leak.o
-examples/leak
+script/cbug
 script/release
 *.zip
+brew
+.DS_Store
