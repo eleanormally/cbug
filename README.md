@@ -2,7 +2,7 @@
 A shell tool to wrap around a docker container and make compiling and debugging memory easy in a closed environment.
 This tool is especially designed for those developing on arm systems (e.g. apple silicon) as most memory debugging tools are not built for it. 
 
-### `NOTE: Cbug is currently only tested and functional for Apple Silicon Macs. This will change in the future, but the program will crash on other machines, even when build from source.`
+### `NOTE: Cbug is currently only tested and functional for Apple Silicon Macs. This will change in the future, but the program will crash on other machines, even when built from source.`
 
 ## Installing CBUG
 Before installing cbug, make sure that you have installed [docker](https://docker.com). Cbug is built on docker, and will not run without it.
