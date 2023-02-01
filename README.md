@@ -9,6 +9,8 @@ Before installing cbug, make sure that you have installed [docker](https://docke
 
 To install cbug, download the latest [release](https://github.com/eleanormally/cbug/releases), and unzip the file. To use cbug, either invoke its path directly (i.e. `~/user/cbug-verion/bin/cbug`), or add the bin directory to your path.
 
+> See the [wiki](https://github.com/eleanormally/cbug/wiki#cbug-an-easy-to-use-shell-for-debugging) for a more detailed setup guide.
+
 ## Using cbug
 Using cbug is very simple. Simply add the `cbug` keyword before any command you want to use in the container. Before compiling or running code, however, make sure to run `cbug sync` to sync your current directory's files with cbug.
 > if a container does not currently exist, cbug will automatically spin one up for you
