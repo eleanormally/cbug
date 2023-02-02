@@ -12,10 +12,23 @@ To install cbug, download the latest [release](https://github.com/eleanormally/c
 > See the [wiki](https://github.com/eleanormally/cbug/wiki#cbug-an-easy-to-use-shell-for-debugging) for a more detailed setup guide.
 
 ## Using cbug
-Using cbug is very simple. Simply add the `cbug` keyword before any command you want to use in the container. Before compiling or running code, however, make sure to run `cbug sync` to sync your current directory's files with cbug.
-> if a container does not currently exist, cbug will automatically spin one up for you
+Using cbug is very simple. Simply add the `cbug` keyword before any command you want to use in the container. Before compiling or running code, however,A make sure to run `cbug sync` to sync your current directory's files with cbug.
+> if a container does not currently exist, cbug will automatically spin one up for you 
+#### Example usage
+```
+cbug sync
+cbug g++ *.cpp
+cbug valgrind ./a.out
+```
 
-### All cbug Commands
+## FAQ
+#### cbug gives me an `exec format error: unknown`
+This happens when code is compiled on your computer, but run in cbug. You must remember to compile the program in cbug
+
+#### running cbug for the first time gives me a "cannot check for malicious software error"
+Open the executable (the file in the bin folder of cbug) by right clicking, and clicking open. Once you have opened it for the first time like this, you will be able to run it from the command line.
+
+## All cbug Commands
 
 #### `cbug help`
 Displays a list of all commands and flags available to use
