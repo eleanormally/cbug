@@ -22,10 +22,10 @@ cbug valgrind ./a.out
 ```
 
 ## FAQ
-#### cbug gives me an `exec format error: unknown`
+### cbug gives me an `exec format error: unknown`
 This happens when code is compiled on your computer, but run in cbug. You must remember to compile the program in cbug
 
-#### running cbug for the first time gives me a "cannot check for malicious software error"
+### running cbug for the first time gives me a "cannot check for malicious software error"
 Open the executable (the file in the bin folder of cbug) by right clicking, and clicking open. Once you have opened it for the first time like this, you will be able to run it from the command line.
 
 ## All cbug Commands
