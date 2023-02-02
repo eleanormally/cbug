@@ -173,6 +173,7 @@ func (t DTag) readable() string {
 }
 
 func getNewRelease(releaseInfo infoStruct) bool {
+	fmt.Println("Checking for new cbug version...")
 	gitCli := github.NewClient(nil)
 	releases, _, err := gitCli.Repositories.ListReleases(context.Background(), "eleanormally", "cbug", &github.ListOptions{
 		Page:    0,
@@ -420,12 +421,12 @@ func main() {
 			fmt.Println("You are currently on a development version of cbug, so no updates are allowed.")
 			return
 		}
-		fmt.Println("checking for new docker container...")
+		fmt.Println("checking for and downloading new docker containers...")
 		images, err := dockerCli.ImageList(context.Background(), types.ImageListOptions{All: true})
 		ifErr(err, "Error listing docker images", false)
 		anyNew := false
 		for _, image := range images {
-			for _, label := range image.Labels {
+			for _, label := range image.RepoTags {
 				if strings.Contains(label, "eleanormally/cpp-memory-debugger") {
 					if doImagePull(dockerCli, label) {
 						fmt.Println("Upgraded docker image " + label + ". THIS HAS NOT UPGRADED ANY CBUG CONTAINERS. Please remove all existing cbug containers and recreate them to use the new version.")
@@ -435,7 +436,7 @@ func main() {
 				}
 			}
 		}
-		if anyNew {
+		if !anyNew {
 			fmt.Println("Already on latest container")
 		}
 		if !getNewRelease(releaseInfo) {
@@ -541,7 +542,6 @@ func main() {
 				OpenStdin:       true,
 				StdinOnce:       false,
 				Env:             []string{},
-				Cmd:             []string{},
 				Healthcheck:     &container.HealthConfig{},
 				ArgsEscaped:     false,
 				Image:           "eleanormally/cpp-memory-debugger:" + selectedTag(releaseInfo, flags),
