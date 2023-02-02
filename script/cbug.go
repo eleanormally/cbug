@@ -31,16 +31,21 @@ type flagStruct struct {
 	stop      bool
 	sync      bool
 	tty       bool
+	forceX86  bool
+	forceArm  bool
 }
 
 type configStruct struct {
 	ContainerName    string `json:"containerName"`
 	DefaultBehaviour string `json:"exitBehaviourDefault"`
+	DockerContainer  string `json:"imageName"`
 }
 
 type infoStruct struct {
-	Version  string `json:"version"`
-	Platform string `json:"target"`
+	Version            string `json:"version"`
+	Platform           string `json:"target"`
+	ArchitectureString string `json:"architecture"`
+	Tag                DTag
 }
 
 func ifErr(err error, errMsg string, printErr bool) {
@@ -54,8 +59,18 @@ func ifErr(err error, errMsg string, printErr bool) {
 	}
 }
 
+func selectedTag(info infoStruct, flags flagStruct) string {
+	if flags.forceArm {
+		return string(DTagArm)
+	}
+	if flags.forceX86 {
+		return string(DTagX86)
+	}
+	return string(info.Tag)
+}
+
 func doImagePull(dockerCli *client.Client, image string) bool {
-	closer, err := dockerCli.ImagePull(context.Background(), "eleanormally/cpp-memory-debugger:latest", types.ImagePullOptions{
+	closer, err := dockerCli.ImagePull(context.Background(), image, types.ImagePullOptions{
 		All:          false,
 		RegistryAuth: "",
 		Platform:     "",
@@ -82,7 +97,6 @@ func unzip(source string, destination string) error {
 	reader, err := zip.OpenReader(source)
 	ifErr(err, "Error unzipping new version", false)
 	defer reader.Close()
-	destination, err = filepath.Abs(destination)
 	ifErr(err, "Error unzipping new version", false)
 	for _, f := range reader.File {
 		err := unzipFile(f, destination)
@@ -94,6 +108,13 @@ func unzip(source string, destination string) error {
 }
 
 func unzipFile(f *zip.File, destination string) error {
+	//this error checking is for a weird file that macos likes to add to its zips
+	//given that I use a mac, releases are going to end up having this, and it
+	//doesnt break anything else
+	fmt.Println(f.Name)
+	if strings.Contains(f.Name, "__MACOS") || strings.Contains(f.Name, ".DS_Store") {
+		return nil
+	}
 	filePath := filepath.Join(destination, f.Name)
 	if !strings.HasPrefix(filePath, filepath.Clean(destination)+string(os.PathSeparator)) {
 		return fmt.Errorf("invalid file path %s", filePath)
@@ -121,6 +142,34 @@ func unzipFile(f *zip.File, destination string) error {
 		return err
 	}
 	return nil
+}
+
+func getTag(instr string) (DTag, error) {
+	switch instr {
+	case "arm64":
+		return DTagArm, nil
+	case "x86":
+		return DTagX86, nil
+	}
+	return "", errors.New("unrecognized architecture")
+}
+
+type DTag string
+
+const (
+	DTagX86 DTag = "x86"
+	DTagArm DTag = "latest"
+)
+
+func (t DTag) readable() string {
+	switch t {
+	case DTagX86:
+		return "x86"
+	case DTagArm:
+		return "arm"
+	default:
+		return ""
+	}
 }
 
 func getNewRelease(releaseInfo infoStruct) bool {
@@ -153,11 +202,19 @@ func getNewRelease(releaseInfo infoStruct) bool {
 				ifErr(err, "Error copying file: ", true)
 				defer file.Close()
 				execLoc, err := os.Executable()
+				ifErr(err, "Error getting current executable path: ", true)
 				parentfolder := filepath.Dir(filepath.Dir(execLoc))
+				if filepath.Base(parentfolder) != "cbug" {
+					fmt.Println("Error, please make sure the cbug folder is named \"cbug\". This is for file security purposes.")
+					return false
+				}
 				err = os.Rename(parentfolder, parentfolder+"old")
 				ifErr(err, "Error renaming old version of cbug", false)
 				if err = unzip(os.TempDir()+"/"+asset.GetName(), filepath.Dir(parentfolder)); err != nil {
+					fmt.Println(err)
 					fmt.Println("Error installing new version of cbug, reverting to old version...")
+					os.RemoveAll(parentfolder)
+					os.Remove(parentfolder)
 					os.Rename(parentfolder+"old", parentfolder)
 					return false
 				}
@@ -178,7 +235,6 @@ func main() {
 	ifErr(err, "Error getting location of cbug: ", true)
 	if _, err = os.Stat(filepath.Dir(execLoc) + "/../config.json"); errors.Is(err, os.ErrNotExist) {
 		os.WriteFile(filepath.Dir(execLoc)+"/../config.json", []byte(`{"containerName": "cbug","exitBehaviourDefault": "shutdown"}`), 0644)
-		fmt.Println("test")
 	}
 	confFile, err := ioutil.ReadFile(filepath.Dir(execLoc) + "/../config.json")
 	conf := configStruct{}
@@ -243,6 +299,18 @@ func main() {
 			flags.sync = true
 		case "-t", "--tty":
 			flags.tty = true
+		case "-a", "--arm":
+			if flags.forceX86 {
+				fmt.Println("cannot force x86 and force arm")
+				os.Exit(1)
+			}
+			flags.forceArm = true
+		case "-x", "--x86":
+			if flags.forceArm {
+				fmt.Println("cannot force x86 and force arm")
+				os.Exit(1)
+			}
+			flags.forceX86 = true
 		default:
 			fmt.Println("Unknown cbug flag \"" + flag + "\"")
 			os.Exit(1)
@@ -266,6 +334,13 @@ func main() {
 	infoFile, err := ioutil.ReadFile(filepath.Dir(execLoc) + "/../release-info.json")
 	releaseInfo := infoStruct{}
 	_ = json.Unmarshal([]byte(infoFile), &releaseInfo)
+	releaseInfo.Tag, err = getTag(releaseInfo.ArchitectureString)
+	ifErr(err, "Error: ", true)
+
+	if len(args) == 0 {
+		fmt.Println("Error, no argument given to cbug")
+		os.Exit(1)
+	}
 
 	//should run help command (and maybe others so its in switch) before touching docker
 	switch args[0] {
@@ -288,7 +363,9 @@ func main() {
 			"\t-p, --pause: pause those container when cbug exits\n" +
 			"\t-S, --sync: sync files before running command given\n" +
 			"\t-t, --tty: run commands through a tty shell. good for formatting, but will break streaming files into stdin (e.g. using < input.txt)\n" +
-			"\t-n, --name: change the name of the container for this command. Does not effect the default conifg")
+			"\t-n, --name: change the name of the container for this command. Does not effect the default conifg" +
+			"\t-x, --x86: force cbug to use an x86 container (works on all machines). If used on an existing arm container, it will not work." +
+			"\t-a, --arm: force cbug to use an arm container (works on all machines). If used on an existing x86 container, it will not work.")
 		return
 	case "config":
 		if len(args) > 1 && args[1] == "default" {
@@ -339,15 +416,27 @@ func main() {
 	ifErr(err, "Unable to connect to docker. Have you installed docker on your machine and is it running?", false)
 
 	if args[0] == "upgrade" {
-		fmt.Println("checking for new docker container...")
-		if doImagePull(dockerCli, "eleanormally/cpp-memory-debugger:latest") {
-			fmt.Println("Upgraded docker image. THIS HAS NOT UPGRADED ANY CBUG CONTAINERS. Please remove all existing cbug containers and recreate them to use the new version.")
-		} else {
-			fmt.Println("Already on latest container")
-		}
 		if releaseInfo.Version == "dev" {
 			fmt.Println("You are currently on a development version of cbug, so no updates are allowed.")
 			return
+		}
+		fmt.Println("checking for new docker container...")
+		images, err := dockerCli.ImageList(context.Background(), types.ImageListOptions{All: true})
+		ifErr(err, "Error listing docker images", false)
+		anyNew := false
+		for _, image := range images {
+			for _, label := range image.Labels {
+				if strings.Contains(label, "eleanormally/cpp-memory-debugger") {
+					if doImagePull(dockerCli, label) {
+						fmt.Println("Upgraded docker image " + label + ". THIS HAS NOT UPGRADED ANY CBUG CONTAINERS. Please remove all existing cbug containers and recreate them to use the new version.")
+						anyNew = true
+					}
+					break
+				}
+			}
+		}
+		if anyNew {
+			fmt.Println("Already on latest container")
 		}
 		if !getNewRelease(releaseInfo) {
 			os.Exit(1)
@@ -379,7 +468,19 @@ func main() {
 						fmt.Println("Done")
 						return
 					}
-					containerID = dContainer.ID
+					if (!flags.forceArm && !flags.forceX86) || strings.Contains(dContainer.Image, selectedTag(releaseInfo, flags)) {
+						fmt.Println(selectedTag(releaseInfo, flags) + " " + dContainer.Image)
+						containerID = dContainer.ID
+					} else {
+						if flags.forceArm {
+							fmt.Println("Error: This container is for x86, please remove this container or specify a name for a new container.")
+							os.Exit(1)
+						}
+						if flags.forceX86 {
+							fmt.Println("Error: This container is for arm, please remove this container or specify a name for a new container.")
+							os.Exit(1)
+						}
+					}
 				} else {
 					fmt.Println("Error: found a docker container with the name \"" + conf.ContainerName + "\" in use not by cbug.\nPlease rename/delete the container named \"" + conf.ContainerName + "\", or use \"cbug config\" to change the name of cbug's container")
 					return
@@ -402,7 +503,7 @@ func main() {
 	mainLoop:
 		for _, image := range images {
 			for _, label := range image.RepoDigests {
-				if strings.Contains(label, "eleanormally/cpp-memory-debugger") {
+				if strings.Contains(label, "eleanormally/cpp-memory-debugger:"+selectedTag(releaseInfo, flags)) {
 					foundImage = true
 					break mainLoop
 				}
@@ -410,11 +511,22 @@ func main() {
 		}
 		if !foundImage {
 			fmt.Print("Pulling cbug docker image...")
-			doImagePull(dockerCli, "eleanormally/cpp-memory-debugger")
+			doImagePull(dockerCli, "eleanormally/cpp-memory-debugger:"+selectedTag(releaseInfo, flags))
 			fmt.Println("Done")
 		}
 
 		fmt.Print("Creating New Docker Container...")
+		platform := specs.Platform{}
+		if selectedTag(releaseInfo, flags) != string(releaseInfo.Tag) {
+			switch selectedTag(releaseInfo, flags) {
+			case string(DTagArm):
+				platform.Architecture = "arm64"
+			case string(DTagX86):
+				platform.Architecture = "amd64"
+			}
+			platform.OS = "linux"
+		}
+
 		cont, err := dockerCli.ContainerCreate(
 			context.Background(),
 			&container.Config{
@@ -432,7 +544,7 @@ func main() {
 				Cmd:             []string{},
 				Healthcheck:     &container.HealthConfig{},
 				ArgsEscaped:     false,
-				Image:           "eleanormally/cpp-memory-debugger:latest",
+				Image:           "eleanormally/cpp-memory-debugger:" + selectedTag(releaseInfo, flags),
 				Volumes:         map[string]struct{}{},
 				WorkingDir:      "/debugger",
 				Entrypoint:      []string{},
@@ -446,7 +558,7 @@ func main() {
 			},
 			&container.HostConfig{},
 			nil,
-			&specs.Platform{},
+			&platform,
 			conf.ContainerName,
 		)
 		ifErr(err, "\n\nError creating Docker container: ", true)

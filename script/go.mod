@@ -2,7 +2,11 @@ module cppdebug
 
 go 1.19
 
-require github.com/docker/docker v20.10.23+incompatible
+require (
+	github.com/docker/docker v20.10.23+incompatible
+	github.com/klauspost/cpuid v1.3.1
+	github.com/klauspost/cpuid/v2 v2.2.3
+)
 
 require (
 	github.com/golang/protobuf v1.3.2 // indirect
@@ -27,7 +31,7 @@ require (
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
 	golang.org/x/net v0.0.0-20220722155237-a158d28d115b // indirect
-	golang.org/x/sys v0.1.0 // indirect
+	golang.org/x/sys v0.2.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.1.12 // indirect
 	gotest.tools/v3 v3.4.0 // indirect

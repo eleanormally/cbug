@@ -8,9 +8,12 @@ RUN mkdir /drmem
 WORKDIR /drmem
 RUN wget https://github.com/DynamoRIO/drmemory/releases/download/release_2.5.0/DrMemory-Linux-2.5.0.tar.gz 
 RUN tar xzf DrMemory-Linux-2.5.0.tar.gz
-RUN export PATH=$PATH:'/drmem/DrMemory-Linux-2.5.0/bin'
+RUN export PATH=$PATH:'/drmem/DrMemory-Linux-2.5.0/bin64'
 
-
+WORKDIR /custom
+RUN touch removeAll.sh
+RUN echo 'rm -rf -- *' > removeAll.sh
+RUN chmod +x removeAll.sh
 
 
 WORKDIR /debugger

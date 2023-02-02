@@ -1,1 +1,1 @@
-{"containerName":"cbug","exitBehaviourDefault":"shutdown"}
+{"containerName":"cbug","exitBehaviourDefault":"shutdown","imageName":"eleanormally/cpp-memory-debugger"}
