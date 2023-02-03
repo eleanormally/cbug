@@ -3,6 +3,7 @@ v1.1.0:
  - added builds for cross platform and cross architecture
  - added notarization for macos builds 
  - fixed upgrade command not properly checking docker hub
+ - fixed error where out of date containers will still be recognized as reusable
 
 
  notes on v1.1.0:

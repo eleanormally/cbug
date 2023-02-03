@@ -205,7 +205,7 @@ func getNewRelease(releaseInfo infoStruct) bool {
 				execLoc, err := os.Executable()
 				ifErr(err, "Error getting current executable path: ", true)
 				parentfolder := filepath.Dir(filepath.Dir(execLoc))
-				if filepath.Base(parentfolder) != "cbug" {
+				if !strings.Contains(filepath.Base(parentfolder), "cbug") {
 					fmt.Println("Error, please make sure the cbug folder is named \"cbug\". This is for file security purposes.")
 					return false
 				}
@@ -364,8 +364,8 @@ func main() {
 			"\t-p, --pause: pause those container when cbug exits\n" +
 			"\t-S, --sync: sync files before running command given\n" +
 			"\t-t, --tty: run commands through a tty shell. good for formatting, but will break streaming files into stdin (e.g. using < input.txt)\n" +
-			"\t-n, --name: change the name of the container for this command. Does not effect the default conifg" +
-			"\t-x, --x86: force cbug to use an x86 container (works on all machines). If used on an existing arm container, it will not work." +
+			"\t-n, --name: change the name of the container for this command. Does not effect the default config" +
+			"\t-x, --x86: force cbug to use an x86 container (works on all machines). If used on an existing arm container, it will not work.\n" +
 			"\t-a, --arm: force cbug to use an arm container (works on all machines). If used on an existing x86 container, it will not work.")
 		return
 	case "config":
@@ -454,7 +454,11 @@ func main() {
 	for _, dContainer := range containers {
 		for _, name := range dContainer.Names {
 			if name == "/"+conf.ContainerName {
-				if strings.Contains(dContainer.Image, "eleanormally/cpp-memory-debugger") {
+				fmt.Println(dContainer.Image)
+				fmt.Println(dContainer)
+				//NOTE: the sha256 case is for windows, which (as of feb 2023) does not properly return the image name on this
+				// command. currently it returns the ID, along with dContainer.ID. If this changes, the or can be removed
+				if strings.Contains(dContainer.Image, "eleanormally/cpp-memory-debugger") || strings.Contains(dContainer.Image, "sha256") {
 					//remove needs to be up here so that don't accidentally create new container if name not found
 					if args[0] == "remove" {
 						delay := time.Duration(1) * time.Millisecond
@@ -470,7 +474,6 @@ func main() {
 						return
 					}
 					if (!flags.forceArm && !flags.forceX86) || strings.Contains(dContainer.Image, selectedTag(releaseInfo, flags)) {
-						fmt.Println(selectedTag(releaseInfo, flags) + " " + dContainer.Image)
 						containerID = dContainer.ID
 					} else {
 						if flags.forceArm {
