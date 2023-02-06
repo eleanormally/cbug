@@ -75,4 +75,8 @@ Run this command on a docker container with a different name than default (this 
 #### `-t`, `--tty`
 Force docker to emulate/pass through as a tty shell. This can cause some problems, but if cbug is not displaying the full output of the command or input streaming is not working, this may help. This flag is not available for `cbug attach`.
 
+#### `-a`, `--arm`
+Use an arm based cbug container. If the computer is x86, it will emulate the arm environment.
 
+#### `-x`, `--x86`
+Use an x86 based cbug container. If the computer is arm, it will emulate the x86 environment
