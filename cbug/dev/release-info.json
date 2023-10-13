@@ -1,0 +1,5 @@
+{
+  "version": "dev",
+  "target": "macos-arm",
+  "architecture": "arm64"
+}
